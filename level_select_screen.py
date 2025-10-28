@@ -1,49 +1,61 @@
-# level_select_screen.py
-import os, pygame
+import os
+import pygame
 
 ASSETS = "assets"
 TILES  = os.path.join(ASSETS, "tiles")
-MAPS   = os.path.join(ASSETS, "maps")
 MENU   = os.path.join(ASSETS, "menu")
 
 W, H = 480, 800
 
 
-class LevelButton:
-    def __init__(self, text, level_id, y, img, sound, on_click):
+class SelectLevelCommand:
+    def __init__(self, callback, level_id):
+        self.callback = callback
         self.level_id = level_id
-        self.text = text
 
-        # mini previsualización
-        self.thumbnail = pygame.transform.scale(
-            img.subsurface((0,0,96,64)), (96,64)
-        )
+    def execute(self):
+        self.callback(self.level_id)
+
+
+class BackCommand:
+    def __init__(self, callback):
+        self.callback = callback
+
+    def execute(self):
+        self.callback()
+
+
+class LevelButton:
+    def __init__(self, text, thumbnail, pos_y, command, sound=None):
+
+        self.command = command
+        self.sound = sound
+
+        self.thumbnail = pygame.transform.scale(thumbnail, (96, 64))
 
         self.normal = pygame.image.load(os.path.join(MENU, "btn_stone.png")).convert_alpha()
-        self.hover  = pygame.image.load(os.path.join(MENU, "btn_stone_hover.png")).convert_alpha()
-        self.image  = self.normal
-        self.rect   = self.image.get_rect(center=(W//2, y))
+        self.hover = pygame.image.load(os.path.join(MENU, "btn_stone_hover.png")).convert_alpha()
+        self.image = self.normal
 
-        self.font   = pygame.font.SysFont("arial", 24, bold=True)
-        self.sound  = sound
-        self.on_click = on_click
+        self.rect = self.image.get_rect(center=(W//2, pos_y))
+
+        self.font = pygame.font.SysFont("arial", 24, bold=True)
+        self.label = self.font.render(text, True, (20, 18, 16))
+
         self._pressed = False
 
     def draw(self, screen):
         screen.blit(self.image, self.rect.topleft)
-
-        # mini preview a la izquierda
         screen.blit(self.thumbnail, (self.rect.x + 10, self.rect.y + 16))
-
-        # texto del nivel
-        label = self.font.render(self.text, True, (20,18,16))
-        screen.blit(label,
-                    (self.rect.x + 120,
-                     self.rect.y + self.rect.height//2 - label.get_height()//2))
+        screen.blit(
+            self.label,
+            (self.rect.x + 120, self.rect.y + self.rect.height//2 - self.label.get_height()//2)
+        )
 
     def handle(self, events):
         mx, my = pygame.mouse.get_pos()
-        inside = self.rect.collidepoint(mx,my)
+        inside = self.rect.collidepoint(mx, my)
+
         self.image = self.hover if inside else self.normal
 
         for e in events:
@@ -51,77 +63,86 @@ class LevelButton:
                 self._pressed = True
             if e.type == pygame.MOUSEBUTTONUP:
                 if inside and self._pressed:
-                    if self.sound:
-                        self.sound.play()
-                    self.on_click(self.level_id)
+                    if self.sound: self.sound.play()
+                    self.command.execute()
                 self._pressed = False
 
 
 class LevelSelectScreen:
     def __init__(self, back_cb, start_level_cb):
-        self.start_level_cb = start_level_cb
-        self.back_cb = back_cb
 
-        # fondos animados
-        self.bg  = pygame.image.load(os.path.join(MENU, "background.png")).convert_alpha()
+        self.bg = pygame.image.load(os.path.join(MENU, "background.png")).convert_alpha()
         self.fog = pygame.image.load(os.path.join(MENU, "fog.png")).convert_alpha()
         self.fog_x = 0
 
-        # efectos
         try:
-            self.sfx = pygame.mixer.Sound(os.path.join(MENU, "sound_select.wav"))
-            self.sfx.set_volume(0.7)
+            self.sfx_click = pygame.mixer.Sound(os.path.join(MENU, "sound_select.wav"))
+            self.sfx_click.set_volume(0.7)
         except:
-            self.sfx = None
+            self.sfx_click = None
 
-        # cargar tiles para mini previews
-        tile_imgs = [
-            pygame.image.load(os.path.join(TILES,"temple_tiles.png")).convert_alpha(),
-            pygame.image.load(os.path.join(TILES,"ruins_tiles.png")).convert_alpha(),
-            pygame.image.load(os.path.join(TILES,"crypt_tiles.png")).convert_alpha()
+        self.thumbs = [
+            pygame.image.load(os.path.join(TILES, "temple_tiles.png")).convert_alpha(),
+            pygame.image.load(os.path.join(TILES, "ruins_tiles.png")).convert_alpha(),
+            pygame.image.load(os.path.join(TILES, "crypt_tiles.png")).convert_alpha(),
         ]
 
-        by = 300
+        spacing_y = 300
         gap = 88
 
-        # botones de niveles
         self.level_buttons = [
-            LevelButton("Nivel 1 - Templo", 1, by + 0*gap, tile_imgs[0], self.sfx, self.start_level_cb),
-            LevelButton("Nivel 2 - Ruinas", 2, by + 1*gap, tile_imgs[1], self.sfx, self.start_level_cb),
-            LevelButton("Nivel 3 - Cripta", 3, by + 2*gap, tile_imgs[2], self.sfx, self.start_level_cb),
+            LevelButton(
+                "Nivel 1 - Templo",
+                self.thumbs[0],
+                spacing_y + 0*gap,
+                SelectLevelCommand(start_level_cb, 1),
+                self.sfx_click
+            ),
+            LevelButton(
+                "Nivel 2 - Ruinas",
+                self.thumbs[1],
+                spacing_y + 1*gap,
+                SelectLevelCommand(start_level_cb, 2),
+                self.sfx_click
+            ),
+            LevelButton(
+                "Nivel 3 - Cripta",
+                self.thumbs[2],
+                spacing_y + 2*gap,
+                SelectLevelCommand(start_level_cb, 3),
+                self.sfx_click
+            ),
         ]
 
-        # botón de volver
-        self.back = LevelButton("← Volver", 0, 300 + 3*gap + 80,
-                                pygame.Surface((96,64)), self.sfx,
-                                lambda _ : self.back_cb())
+        self.back_button = LevelButton(
+            "← Volver",
+            pygame.Surface((96, 64)),
+            spacing_y + 3*gap + 80,
+            BackCommand(back_cb),
+            self.sfx_click
+        )
 
         self.title_font = pygame.font.SysFont("georgia", 34, bold=True)
+        self.title = self.title_font.render("Seleccionar nivel", True, (235, 220, 200))
 
     def update(self, dt):
         self.fog_x = (self.fog_x + 18 * dt) % self.fog.get_width()
 
     def draw(self, screen):
-        # fondo
-        screen.blit(self.bg, (0,0))
+        screen.blit(self.bg, (0, 0))
 
-        # niebla
         fx = int(self.fog_x)
-        screen.blit(self.fog, (-fx, 250), special_flags=pygame.BLEND_PREMULTIPLIED)
-        screen.blit(self.fog,
-                    (self.fog.get_width()-fx, 250),
-                    special_flags=pygame.BLEND_PREMULTIPLIED)
+        screen.blit(self.fog, (-fx, 250))
+        screen.blit(self.fog, (self.fog.get_width() - fx, 250))
 
-        # título
-        t = self.title_font.render("Seleccionar nivel", True, (235,220,200))
-        screen.blit(t, (W//2 - t.get_width()//2, 140))
+        screen.blit(self.title, (W//2 - self.title.get_width()//2, 140))
 
-        # botones
-        for b in self.level_buttons:
-            b.draw(screen)
+        for btn in self.level_buttons:
+            btn.draw(screen)
 
-        self.back.draw(screen)
+        self.back_button.draw(screen)
 
     def handle(self, events):
-        for b in self.level_buttons: b.handle(events)
-        self.back.handle(events)
+        for btn in self.level_buttons:
+            btn.handle(events)
+        self.back_button.handle(events)
