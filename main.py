@@ -13,15 +13,17 @@ W, H = 480, 800
 TILE = 32
 FPS  = 60
 
-SOLIDS = {1,2,3,4}
-TRAPS  = {5}
+# Cerca de la línea 16 en main.py:
+SOLIDS = {1,2,3,4, 14, 18} # 14 (Borde Sup) y 18 (Trampa Invisible) son sólidos
+TRAPS  = {5, 10, 15}      # 10 (Pinchos) y 15 (Agua) ahora son trampas
 CHECKS = {6}
-SIGNS  = {7}
+SIGNS  = {7, 13, 16}      # 7 (Monedas), 13 (Antorchas), 16 (Cadenas) son objetos simples
 ENEMY_SPAWNS = {8}
 EXIT   = {9}
-LADDERS= {10}
+LADDERS= {10, 17}         # 17 (Lianas) ahora son escaleras
 FALLING_SPAWN = {11}
 SAW_SPAWN = {12}
+
 
 pygame.init()
 pygame.mixer.init()
@@ -103,7 +105,18 @@ class Level:
         self.h = len(self.grid)
         self.w = max((len(row) for row in self.grid), default=0)
 
-        self.idx={1:0,2:1,3:2,4:3,5:4,6:5,7:7,8:8,9:9,10:2,11:3,12:2}
+        self.idx={
+    1:0, 2:1, 3:2, 4:3, 5:4, 6:5, 7:7, 8:8, 9:9,  # Tiles originales
+    10: 4,  # Pinchos (usando el mismo sprite que el original 5/4, quizás necesites uno nuevo)
+    11: 10, # Roca de Fondo
+    12: 11, # Caja de Madera
+    13: 12, # Antorcha
+    14: 3,  # Borde Superior (usando el mismo sprite que 4, por ejemplo)
+    15: 13, # Agua
+    16: 14, # Cadena Colgante
+    17: 15, # Liana/Escalera
+    18: 0,  # Bloque Invisible (mapeado a aire/transparente para que no se vea)
+}
 
         self.solid_rects=[]; self.trap_rects=[]
         self.check_rects=[]; self.exit_rects=[]
@@ -464,24 +477,41 @@ def run():
     level_index=1
     cinema_timer=0.0
     self_boss=None
+    
+    # ¡ESTO ES CRUCIAL! DEBE ESTAR INICIALIZADO.
+    bg_img = None 
 
     combat = CombatSystem()
 
+
     def start_level(n):
-        nonlocal level,player,mode,camx,camy,enemies,level_index,self_boss,combat
+        nonlocal level,player,mode,camx,camy,enemies,level_index,self_boss,combat, bg_img 
         level_index=n
 
         if n==1:
             lvl=os.path.join(MAPS,"level1_temple.csv")
             til=os.path.join(TILES,"temple_tiles.png")
+            bg_path = os.path.join(TILES, "fondo_juego.png") # Cambia "temple_bg.png" si tienes otro nombre
         elif n==2:
             lvl=os.path.join(MAPS,"level2_ruins.csv")
             til=os.path.join(TILES,"ruins_tiles.png")
+            bg_path = os.path.join(TILES, "fondo_juego.png") # ⬅️ Usa el nombre de tu archivo aquí
         else:
             lvl=os.path.join(MAPS,"level3_crypt.csv")
             til=os.path.join(TILES,"crypt_tiles.png")
+            bg_path = os.path.join(TILES, "fondo_juego.png") # Cambia "crypt_bg.png" si tienes otro nombre
 
         level=Level(til,lvl)
+        
+        try:
+            bg_img = pygame.image.load(bg_path).convert()
+            
+            # AÑADIR: Habilitar la transparencia y establecer el valor (200 es semi-transparente)
+            bg_img.set_alpha(200) 
+            
+        except pygame.error:
+            bg_img = None
+            print(f"Advertencia: No se pudo cargar el fondo {bg_path}")
 
         sx,sy=find_safe_spawn(level,64,100,32,48)
         player=Player(sx,sy)
@@ -553,7 +583,7 @@ def run():
             # Salida
             if any(player.rect.colliderect(r) for r in level.exit_rects):
                 nxt = 1 if level_index>=3 else level_index+1
-                start_level(nxt)
+                start_level(nxt) # <-- Esto te lleva al siguiente nivel (o al nivel 1 si terminaste el 3)
 
             # Boss Logic + Command(Attack)
             if self_boss:
@@ -570,12 +600,28 @@ def run():
             camy+=(tgty-camy)*6*dt
 
             # Dibujo
-            screen.fill((20,20,30))
+            if bg_img:
+                # 1. Obtener ancho del fondo (bg_w)
+                bg_w, bg_h = bg_img.get_size()
+                
+                # 2. Calcular el desplazamiento horizontal para centrar la imagen
+                # W (480) - bg_w dividido por 2
+                dx = (W - bg_w) // 2
+
+                # 3. Dibuja el fondo usando el desplazamiento dx para centrarlo.
+                # El paralaje vertical sigue intacto (camy * 0.3).
+                screen.blit(bg_img, (dx, 0 - int(camy * 0.3)))
+            else:
+                screen.fill((20,20,30)) # Color sólido de respaldo si no hay imagen
+
             level.draw(screen,int(camx),int(camy))
+            # ...
+            level.draw(screen,int(camx),int(camy)) # Dibuja los tiles/plataformas
             for enemy in enemies:
                 screen.blit(enemy.image,(enemy.rect.x-int(camx),enemy.rect.y-int(camy)))
             if self_boss:
                 self_boss.draw(screen,int(camx),int(camy))
+            # ESTA LÍNEA DEBE SER LA ÚLTIMA EN DIBUJAR EL JUGADOR
             screen.blit(player.image,(player.rect.x-int(camx),player.rect.y-int(camy)))
 
             # Overlay de i-frames (feedback visual)
